@@ -1,12 +1,12 @@
 # Face
 
-Realtime head/face tracking app that overlays a solid green privacy mask, removes the background, and uses prediction to prevent mask jumps during short tracking loss.
+Realtime head/face tracking app that applies a pixelated privacy blur on the face, removes the background, and uses prediction to prevent mask jumps during short tracking loss.
 
 ## Features
 
 - Realtime webcam processing.
 - Face oval tracking via MediaPipe FaceLandmarker.
-- Green mask overlay on the detected face region.
+- Pixelated blur overlay on the detected face region.
 - Person segmentation and strong blurred background replacement.
 - Hand tracking that forces hands to stay in foreground (not replaced by background).
 - Anti-slip strategy:
@@ -47,8 +47,9 @@ python main.py --camera 0 --show-fps
 
 Useful flags:
 
-- `--mask-color 0,255,0`
+- `--mask-color 0,255,0` (deprecated compatibility flag, no-op)
 - `--mask-scale 1.18`
+- `--face-pixel-size 16`
 - `--loss-ttl-ms 200`
 - `--fade-out-ms 250`
 - `--re-detect-interval 2`

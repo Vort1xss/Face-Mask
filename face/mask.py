@@ -36,13 +36,27 @@ class MaskRenderer:
         if alpha <= 0.0:
             return frame
 
+        mask = _build_polygon_mask(height, width, polygon, self._cv2)
+        if not np.any(mask):
+            return frame
+
+        x_min = int(np.min(polygon[:, 0]))
+        x_max = int(np.max(polygon[:, 0])) + 1
+        y_min = int(np.min(polygon[:, 1]))
+        y_max = int(np.max(polygon[:, 1])) + 1
+        x_min = int(np.clip(x_min, 0, width))
+        x_max = int(np.clip(x_max, 0, width))
+        y_min = int(np.clip(y_min, 0, height))
+        y_max = int(np.clip(y_max, 0, height))
+        if x_min >= x_max or y_min >= y_max:
+            return frame
+
         overlay = frame.copy()
-        if self._cv2 is not None:
-            self._cv2.fillPoly(overlay, [polygon], self.config.mask_color_bgr)
-            _draw_cartoon_eyes_cv2(self._cv2, overlay, polygon)
-        else:
-            mask = _polygon_mask(height, width, polygon.astype(np.float32))
-            overlay[mask] = np.array(self.config.mask_color_bgr, dtype=np.uint8)
+        roi = frame[y_min:y_max, x_min:x_max]
+        roi_mask = mask[y_min:y_max, x_min:x_max]
+        pixelated_roi = _pixelate_roi(roi, self.config.face_pixel_size, self._cv2)
+        overlay_roi = overlay[y_min:y_max, x_min:x_max]
+        overlay_roi[roi_mask] = pixelated_roi[roi_mask]
 
         if alpha >= 1.0:
             return overlay
@@ -71,6 +85,38 @@ def _polygon_mask(height: int, width: int, polygon: np.ndarray) -> np.ndarray:
     return inside
 
 
+def _build_polygon_mask(height: int, width: int, polygon: np.ndarray, cv2_module) -> np.ndarray:
+    if cv2_module is not None:
+        mask = np.zeros((height, width), dtype=np.uint8)
+        cv2_module.fillPoly(mask, [polygon], 255)
+        return mask > 0
+    return _polygon_mask(height, width, polygon.astype(np.float32))
+
+
+def _pixelate_roi(roi: np.ndarray, block_size: int, cv2_module) -> np.ndarray:
+    if roi.size == 0:
+        return roi
+
+    block = max(1, int(block_size))
+    roi_h, roi_w = roi.shape[:2]
+    small_w = max(1, roi_w // block)
+    small_h = max(1, roi_h // block)
+
+    if cv2_module is not None:
+        reduced = cv2_module.resize(
+            roi, (small_w, small_h), interpolation=cv2_module.INTER_AREA
+        )
+        return cv2_module.resize(
+            reduced, (roi_w, roi_h), interpolation=cv2_module.INTER_NEAREST
+        )
+
+    reduced = roi[::block, ::block]
+    if reduced.shape[0] == 0 or reduced.shape[1] == 0:
+        reduced = roi[:1, :1]
+    expanded = np.repeat(np.repeat(reduced, block, axis=0), block, axis=1)
+    return expanded[:roi_h, :roi_w]
+
+
 def _scale_polygon(
     polygon: np.ndarray, scale: float, width: int, height: int
 ) -> np.ndarray:
@@ -79,61 +125,3 @@ def _scale_polygon(
     expanded[:, 0] = np.clip(expanded[:, 0], 0, width - 1)
     expanded[:, 1] = np.clip(expanded[:, 1], 0, height - 1)
     return np.round(expanded).astype(np.int32)
-
-
-def _draw_cartoon_eyes_cv2(cv2_module, canvas: np.ndarray, polygon: np.ndarray) -> None:
-    x_min = int(np.min(polygon[:, 0]))
-    x_max = int(np.max(polygon[:, 0]))
-    y_min = int(np.min(polygon[:, 1]))
-    y_max = int(np.max(polygon[:, 1]))
-    face_w = max(1, x_max - x_min)
-    face_h = max(1, y_max - y_min)
-    center_x = int((x_min + x_max) * 0.5)
-
-    eye_y = int(y_min + 0.4 * face_h)
-    eye_dx = max(10, int(face_w * 0.19))
-    eye_rx = max(7, int(face_w * 0.078))
-    eye_ry = max(4, int(face_h * 0.05))
-    pupil_r = max(2, int(min(face_w, face_h) * 0.016))
-
-    left_eye = (center_x - eye_dx, eye_y)
-    right_eye = (center_x + eye_dx, eye_y)
-    height, width = canvas.shape[:2]
-    left_eye = (int(np.clip(left_eye[0], 0, width - 1)), int(np.clip(left_eye[1], 0, height - 1)))
-    right_eye = (
-        int(np.clip(right_eye[0], 0, width - 1)),
-        int(np.clip(right_eye[1], 0, height - 1)),
-    )
-
-    sclera_color = (230, 245, 230)
-    lid_color = (30, 95, 30)
-    pupil_color = (20, 45, 20)
-
-    # Neutral eyes with soft colors.
-    cv2_module.ellipse(canvas, left_eye, (eye_rx, eye_ry), 0, 0, 360, sclera_color, -1)
-    cv2_module.ellipse(canvas, right_eye, (eye_rx, eye_ry), 0, 0, 360, sclera_color, -1)
-    cv2_module.ellipse(canvas, left_eye, (eye_rx, eye_ry), 0, 0, 360, lid_color, 1)
-    cv2_module.ellipse(canvas, right_eye, (eye_rx, eye_ry), 0, 0, 360, lid_color, 1)
-
-    # Small soft pupils.
-    cv2_module.circle(canvas, left_eye, pupil_r, pupil_color, -1)
-    cv2_module.circle(canvas, right_eye, pupil_r, pupil_color, -1)
-
-    # Very light upper lids to keep a neutral expression.
-    lid_thickness = 1
-    cv2_module.line(
-        canvas,
-        (left_eye[0] - eye_rx, left_eye[1] - eye_ry),
-        (left_eye[0] + eye_rx, left_eye[1] - eye_ry),
-        lid_color,
-        lid_thickness,
-        cv2_module.LINE_AA,
-    )
-    cv2_module.line(
-        canvas,
-        (right_eye[0] - eye_rx, right_eye[1] - eye_ry),
-        (right_eye[0] + eye_rx, right_eye[1] - eye_ry),
-        lid_color,
-        lid_thickness,
-        cv2_module.LINE_AA,
-    )

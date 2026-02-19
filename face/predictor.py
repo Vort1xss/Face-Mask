@@ -100,13 +100,7 @@ class FacePredictor:
 
         prev_flat = self.prev_points.reshape(-1, 2)
         next_flat = next_points.reshape(-1, 2)
-        deltas = next_flat[status_flat] - prev_flat[status_flat]
-        if deltas.size == 0:
-            return None
-
-        median_delta = np.median(deltas, axis=0)
-        repaired = next_flat.copy()
-        repaired[~status_flat] = prev_flat[~status_flat] + median_delta
+        repaired = _repair_flow_points(prev_flat, next_flat, status_flat, self._cv2)
         return repaired.astype(np.float32)
 
     def _predict_without_observation(
@@ -151,3 +145,31 @@ class FacePredictor:
             return 0
         return max(0, timestamp_ms - self.last_valid_time_ms)
 
+
+def _repair_flow_points(
+    prev_flat: np.ndarray, next_flat: np.ndarray, status_flat: np.ndarray, cv2_module
+) -> np.ndarray:
+    good_prev = prev_flat[status_flat]
+    good_next = next_flat[status_flat]
+    if good_prev.size == 0:
+        return next_flat.copy()
+
+    repaired = next_flat.copy()
+    if cv2_module is not None and good_prev.shape[0] >= 3:
+        matrix, _ = cv2_module.estimateAffinePartial2D(
+            good_prev.astype(np.float32),
+            good_next.astype(np.float32),
+            method=cv2_module.RANSAC,
+            ransacReprojThreshold=3.0,
+        )
+        if matrix is not None:
+            prev_h = np.hstack(
+                (prev_flat.astype(np.float32), np.ones((prev_flat.shape[0], 1), dtype=np.float32))
+            )
+            projected = (prev_h @ matrix.T).astype(np.float32)
+            repaired[~status_flat] = projected[~status_flat]
+            return repaired
+
+    median_delta = np.median(good_next - good_prev, axis=0)
+    repaired[~status_flat] = prev_flat[~status_flat] + median_delta
+    return repaired

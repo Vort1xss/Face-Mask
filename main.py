@@ -10,7 +10,7 @@ from face.config import AppConfig
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Realtime head/face tracking with a green privacy mask."
+        description="Realtime head/face tracking with a pixelated privacy blur."
     )
     parser.add_argument("--camera", type=int, default=0, help="Camera device index.")
     parser.add_argument("--width", type=int, default=640, help="Capture width.")
@@ -19,19 +19,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--mask-color",
         type=str,
         default="0,255,0",
-        help="Mask BGR color (example: 0,255,0).",
+        help="Deprecated compatibility flag (no-op). Previous mask BGR color (example: 0,255,0).",
     )
     parser.add_argument(
         "--alpha",
         type=float,
         default=1.0,
-        help="Global mask alpha in range 0..1.",
+        help="Global face blur alpha in range 0..1.",
     )
     parser.add_argument(
         "--mask-scale",
         type=float,
         default=1.18,
         help="Scale of the face mask polygon (1.0..1.8).",
+    )
+    parser.add_argument(
+        "--face-pixel-size",
+        type=int,
+        default=16,
+        help="Pixel block size for face blur (4..24).",
     )
     parser.add_argument(
         "--loss-ttl-ms",

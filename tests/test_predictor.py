@@ -4,6 +4,7 @@ import numpy as np
 
 from face.config import AppConfig
 from face.predictor import FacePredictor
+from face.predictor import _repair_flow_points
 
 
 def test_predictor_detected_to_flow_to_predict_and_hide(monkeypatch):
@@ -63,3 +64,32 @@ def test_needs_redetect_interval():
     assert predictor.needs_redetect(2) is False
     assert predictor.needs_redetect(3) is True
 
+
+def test_repair_flow_points_uses_affine_for_missing_points():
+    prev = np.array(
+        [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 1.0],
+        ],
+        dtype=np.float32,
+    )
+    matrix = np.array([[1.0, 0.0, 3.0], [0.0, 1.0, 5.0]], dtype=np.float32)
+    prev_h = np.hstack((prev, np.ones((prev.shape[0], 1), dtype=np.float32)))
+    transformed = prev_h @ matrix.T
+
+    next_points = transformed.copy()
+    next_points[3] = np.array([999.0, 999.0], dtype=np.float32)
+    status = np.array([True, True, True, False], dtype=bool)
+
+    class FakeCV2:
+        RANSAC = 1
+
+        @staticmethod
+        def estimateAffinePartial2D(*_args, **_kwargs):
+            return matrix, np.ones((3, 1), dtype=np.uint8)
+
+    repaired = _repair_flow_points(prev, next_points, status, FakeCV2)
+
+    assert np.allclose(repaired[3], transformed[3], atol=1e-6)

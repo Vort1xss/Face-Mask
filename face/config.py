@@ -24,6 +24,7 @@ class AppConfig:
     mask_color_bgr: tuple[int, int, int] = (0, 255, 0)
     mask_alpha: float = 1.0
     mask_scale: float = 1.18
+    face_pixel_size: int = 16
     loss_ttl_ms: int = 200
     fade_out_ms: int = 250
     re_detect_interval: int = 2
@@ -66,6 +67,7 @@ class AppConfig:
             mask_color_bgr=parse_bgr_color(args.mask_color),
             mask_alpha=alpha,
             mask_scale=max(1.0, min(1.8, float(args.mask_scale))),
+            face_pixel_size=max(4, min(24, int(args.face_pixel_size))),
             loss_ttl_ms=max(0, int(args.loss_ttl_ms)),
             fade_out_ms=max(1, int(args.fade_out_ms)),
             re_detect_interval=max(1, int(args.re_detect_interval)),
